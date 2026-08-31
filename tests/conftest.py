@@ -150,6 +150,7 @@ class FakeMailBox:
     def fetch(
         self,
         criteria: Any = "ALL",
+        charset: str = "US-ASCII",
         *,
         limit: int | None = None,
         reverse: bool = False,
@@ -163,6 +164,7 @@ class FakeMailBox:
                 "fetch",
                 {
                     "criteria": criteria,
+                    "charset": charset,
                     "limit": limit,
                     "reverse": reverse,
                     "headers_only": headers_only,

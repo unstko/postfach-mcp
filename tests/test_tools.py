@@ -110,6 +110,14 @@ class TestSearchMessages:
         assert "SUBJECT" in criteria
         assert "SINCE 1-Aug-2026" in criteria
         assert "UNSEEN" in criteria
+        # ASCII criteria stay ASCII: no CHARSET surprise for old servers.
+        assert last_call(fake_mailbox, "fetch")["charset"] == "US-ASCII"
+
+    def test_non_ascii_criteria_switch_to_utf8(self, server, fake_mailbox):
+        call(server, "search_messages", subject="Grüße")
+        fetch = last_call(fake_mailbox, "fetch")
+        assert fetch["charset"] == "UTF-8"
+        assert "Grüße" in str(fetch["criteria"])
 
 
 class TestGetMessage:

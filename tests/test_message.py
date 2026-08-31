@@ -127,7 +127,8 @@ class TestBuildDraft:
         assert parsed["Subject"] == "Grüße aus dem Test"
         assert parsed["In-Reply-To"] == "<parent@example.org>"
         assert parsed["References"] == "<root@example.org> <parent@example.org>"
-        assert parsed["Message-ID"]
+        # The sender's domain, never the local hostname of the machine.
+        assert parsed["Message-ID"].endswith("@example.org>")
         assert parsed["Date"]
         assert "äöüß" in parsed.get_content()
 

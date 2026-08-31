@@ -191,7 +191,8 @@ def build_draft(
     """Build an RFC-822 draft. Threading headers are the caller's choice;
     Message-ID and Date are always set so the draft is complete."""
     msg = EmailMessage()
-    msg["From"] = parse_address(from_address, "from")
+    sender = parse_address(from_address, "from")
+    msg["From"] = sender
     msg["To"] = [parse_address(raw, "to") for raw in to]
     if cc:
         msg["Cc"] = [parse_address(raw, "cc") for raw in cc]
@@ -199,7 +200,9 @@ def build_draft(
         msg["Bcc"] = [parse_address(raw, "bcc") for raw in bcc]
     msg["Subject"] = ensure_header_safe(subject, "subject")
     msg["Date"] = formatdate(localtime=True)
-    msg["Message-ID"] = make_msgid()
+    # The sender's domain, not the local hostname: a default make_msgid()
+    # would write the machine's internal name into the mailbox.
+    msg["Message-ID"] = make_msgid(domain=sender.domain)
     if in_reply_to:
         msg["In-Reply-To"] = ensure_header_safe(in_reply_to, "in_reply_to")
     if references:

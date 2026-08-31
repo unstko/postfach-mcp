@@ -174,10 +174,16 @@ def register(mcp: MCPServer, settings: Settings) -> None:
             criteria_kwargs["date_lt"] = _parse_date(before, "before")
         if not criteria_kwargs:
             raise ValueError("provide at least one search criterion (use list_messages to browse)")
+        criteria = AND(**criteria_kwargs)
+        # imap-tools sends search criteria as ASCII unless told otherwise;
+        # switching to UTF-8 only when actually needed keeps ASCII searches
+        # working against servers without SEARCH CHARSET UTF-8 support.
+        charset = "US-ASCII" if str(criteria).isascii() else "UTF-8"
         with imap.open_mailbox(account, folder) as mb:
             found = list(
                 mb.fetch(
-                    AND(**criteria_kwargs),
+                    criteria,
+                    charset,
                     limit=_clamp_limit(limit),
                     reverse=True,
                     headers_only=True,
