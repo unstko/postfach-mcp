@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from .message import parse_address
+
 PREFIX = "POSTFACH_MCP_"
 
 # A shorter token is a guessable token. The error message tells the operator
@@ -34,6 +36,10 @@ class Account:
     password: str
     drafts_folder: str
     from_address: str
+    # Additional sender identities create_draft may use on request. The
+    # allowlist is the security boundary: a draft's From header only ever
+    # comes from configuration, never from free-text tool input.
+    from_addresses: tuple[str, ...]
     # "text" writes plain-text drafts; "html" adds an HTML alternative for
     # clients whose composer collapses plain-text line breaks (e.g. Spark).
     draft_format: str
@@ -106,6 +112,15 @@ def load(require_token: bool = True) -> Settings:
     if draft_format not in ("text", "html"):
         problems.append(f"{PREFIX}DRAFT_FORMAT must be 'text' or 'html', not {draft_format!r}")
 
+    from_addresses = tuple(
+        part.strip() for part in (_env("FROM_ADDRESSES") or "").split(",") if part.strip()
+    )
+    for entry in from_addresses:
+        try:
+            parse_address(entry, "FROM_ADDRESSES")
+        except ValueError:
+            problems.append(f"{PREFIX}FROM_ADDRESSES contains an invalid address: {entry!r}")
+
     if problems:
         raise ConfigError("; ".join(problems))
 
@@ -122,6 +137,7 @@ def load(require_token: bool = True) -> Settings:
             password=required["IMAP_PASSWORD"],
             drafts_folder=_env("DRAFTS_FOLDER", "Drafts") or "Drafts",
             from_address=_env("FROM_ADDRESS", user) or user,
+            from_addresses=from_addresses,
             draft_format=draft_format,
         ),
     )

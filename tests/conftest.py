@@ -37,6 +37,7 @@ def account() -> config.Account:
         password="secret-password",
         drafts_folder="Drafts",
         from_address="User <user@example.org>",
+        from_addresses=(),
         draft_format="text",
     )
 

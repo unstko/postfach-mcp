@@ -58,6 +58,7 @@ are reported together, each by name.
 | `IMAP_PORT` | `993` | IMAP over TLS port |
 | `DRAFTS_FOLDER` | `Drafts` | Folder that receives created drafts; `postfach-mcp check` verifies it exists |
 | `FROM_ADDRESS` | `IMAP_USER` | From header for drafts, e.g. `Your Name <you@example.org>` |
+| `FROM_ADDRESSES` | — | Comma-separated additional sender identities `create_draft` may select via its `from_address` argument; anything not listed here or in `FROM_ADDRESS` is rejected |
 | `DRAFT_FORMAT` | `text` | `text` writes plain-text drafts; `html` adds an HTML rendering of the same text as a `multipart/alternative` part — for clients whose HTML-based composer collapses plain-text line breaks (Spark, for example) |
 | `TOKEN` | *(required for `serve`)* | Bearer token, at least 32 characters (`openssl rand -hex 32`) |
 | `HOST` | `127.0.0.1` | Bind address of the HTTP server |

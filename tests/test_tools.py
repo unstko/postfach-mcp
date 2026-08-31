@@ -183,6 +183,44 @@ class TestCreateDraft:
         assert text_part.get_content_type() == "text/plain"
         assert "Absatz eins.<br><br>Absatz zwei." in html_part.get_content()
 
+    def test_default_sender_without_from_address(self, server, fake_mailbox):
+        fake_mailbox.add_folder("Drafts")
+        call(server, "create_draft", to=["bob@example.org"], subject="Hi", body="x")
+        parsed = message_from_bytes(fake_mailbox.appended[0][0], policy=policy.default)
+        assert parsed["From"] == "User <user@example.org>"
+
+    def test_allowlisted_extra_sender(self, settings, fake_mailbox):
+        alt_settings = dataclasses.replace(
+            settings,
+            account=dataclasses.replace(
+                settings.account, from_addresses=("Stefan <koch@gmx.example>",)
+            ),
+        )
+        mcp = MCPServer("postfach-mcp-test")
+        tools.register(mcp, alt_settings)
+        fake_mailbox.add_folder("Drafts")
+        result = call(
+            mcp,
+            "create_draft",
+            to=["bob@example.org"],
+            subject="Hi",
+            body="x",
+            from_address="koch@gmx.example",
+        )
+        assert result["from"] == "Stefan <koch@gmx.example>"
+        parsed = message_from_bytes(fake_mailbox.appended[0][0], policy=policy.default)
+        assert parsed["From"] == "Stefan <koch@gmx.example>"
+        assert parsed["Message-ID"].endswith("@gmx.example>")
+
+    def test_foreign_sender_rejected(self, server, fake_mailbox):
+        fake_mailbox.add_folder("Drafts")
+        call_error(
+            server, "create_draft", "sender not allowed",
+            to=["bob@example.org"], subject="Hi", body="x",
+            from_address="attacker@evil.example",
+        )  # fmt: skip
+        assert fake_mailbox.appended == []
+
     def test_reply_sets_threading_headers(self, server, fake_mailbox):
         fake_mailbox.add_folder("Drafts")
         fake_mailbox.add_message(

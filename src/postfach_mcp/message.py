@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import html as html_escaping
 import re
+from collections.abc import Sequence
 from email.headerregistry import Address
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid, parseaddr
@@ -176,6 +177,24 @@ def full(msg: Any, folder: str, max_body_chars: int = MAX_BODY_CHARS) -> dict[st
 
 
 # -- Writing ----------------------------------------------------------------
+
+
+def resolve_sender(requested: str | None, allowed: Sequence[str]) -> str:
+    """Pick the sender identity for a draft from the configured allowlist.
+
+    `allowed` holds the configured identities, the first one being the
+    default. A requested sender must match one of them by address
+    (case-insensitive, display name ignored) — and what is returned is the
+    configured entry, display name included, so the From header is always
+    built from configuration, never from free-text tool input."""
+    if requested is None:
+        return allowed[0]
+    addr = parse_address(requested, "from").addr_spec.lower()
+    for entry in allowed:
+        if parse_address(entry, "from").addr_spec.lower() == addr:
+            return entry
+    allowed_specs = ", ".join(parse_address(entry, "from").addr_spec for entry in allowed)
+    raise ValueError(f"sender not allowed: {requested!r} (allowed: {allowed_specs})")
 
 
 def body_as_html(body: str) -> str:

@@ -221,7 +221,9 @@ def register(mcp: MCPServer, settings: Settings) -> None:
             "send anything — the user reviews and sends the draft from their "
             "own mail client. Plain text only. For replies pass reply_to_uid "
             "(and reply_to_folder) of the original; threading headers are set "
-            "automatically, but prefix 'Re: ' to the subject yourself."
+            "automatically, but prefix 'Re: ' to the subject yourself. "
+            "from_address may select one of the operator-configured sender "
+            "identities; omitted, the default identity is used."
         ),
         annotations=_WRITE,
     )
@@ -234,6 +236,7 @@ def register(mcp: MCPServer, settings: Settings) -> None:
         bcc: list[str] | None = None,
         reply_to_uid: str | None = None,
         reply_to_folder: str = "INBOX",
+        from_address: str | None = None,
     ) -> dict[str, Any]:
         if not to:
             raise ValueError("'to' must contain at least one recipient")
@@ -241,6 +244,9 @@ def register(mcp: MCPServer, settings: Settings) -> None:
             raise ValueError(f"subject longer than {MAX_SUBJECT_CHARS} characters")
         if len(body) > MAX_BODY_CHARS:
             raise ValueError(f"body longer than {MAX_BODY_CHARS} characters")
+        sender = message.resolve_sender(
+            from_address, (account.from_address, *account.from_addresses)
+        )
 
         with imap.open_mailbox(account) as mb:
             in_reply_to: str | None = None
@@ -257,7 +263,7 @@ def register(mcp: MCPServer, settings: Settings) -> None:
                 in_reply_to, references = message.threading_headers(originals[0])
 
             draft = message.build_draft(
-                from_address=account.from_address,
+                from_address=sender,
                 to=to,
                 cc=cc,
                 bcc=bcc,
@@ -279,6 +285,7 @@ def register(mcp: MCPServer, settings: Settings) -> None:
             "saved": True,
             "folder": account.drafts_folder,
             "message_id": draft["Message-ID"],
+            "from": sender,
             "to": to,
             "subject": subject,
         }

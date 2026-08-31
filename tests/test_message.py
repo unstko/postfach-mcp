@@ -109,6 +109,27 @@ class TestReading:
         assert result["references"] == ["<root@example.org>", "<parent@example.org>"]
 
 
+class TestResolveSender:
+    ALLOWED = ("Default <default@example.org>", "Stefan <koch@gmx.example>")
+
+    def test_none_picks_the_default(self):
+        assert message.resolve_sender(None, self.ALLOWED) == "Default <default@example.org>"
+
+    def test_match_returns_the_configured_entry(self):
+        # Case-insensitive on the address; the caller's display name is
+        # discarded in favor of the configured one.
+        resolved = message.resolve_sender("Evil <KOCH@GMX.EXAMPLE>", self.ALLOWED)
+        assert resolved == "Stefan <koch@gmx.example>"
+
+    def test_foreign_address_rejected(self):
+        with pytest.raises(ValueError, match="sender not allowed"):
+            message.resolve_sender("attacker@evil.example", self.ALLOWED)
+
+    def test_garbage_rejected(self):
+        with pytest.raises(ValueError, match="invalid email address"):
+            message.resolve_sender("not-an-address", self.ALLOWED)
+
+
 class TestBuildDraft:
     def test_roundtrip(self):
         draft = message.build_draft(

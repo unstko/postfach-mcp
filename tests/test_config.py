@@ -92,6 +92,23 @@ def test_from_address_override(clean_env):
     assert config.load().account.from_address == "Stefan <s@example.org>"
 
 
+def test_from_addresses_default_empty(clean_env):
+    set_valid(clean_env)
+    assert config.load().account.from_addresses == ()
+
+
+def test_from_addresses_parsing(clean_env):
+    set_valid(clean_env, FROM_ADDRESSES=" Stefan <s@gmx.example> , ,other@example.org ")
+    settings = config.load()
+    assert settings.account.from_addresses == ("Stefan <s@gmx.example>", "other@example.org")
+
+
+def test_from_addresses_rejects_invalid_entry(clean_env):
+    set_valid(clean_env, FROM_ADDRESSES="valid@example.org,not-an-address")
+    with pytest.raises(config.ConfigError, match="POSTFACH_MCP_FROM_ADDRESSES"):
+        config.load()
+
+
 def test_draft_format_defaults_to_text(clean_env):
     set_valid(clean_env)
     assert config.load().account.draft_format == "text"
