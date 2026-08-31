@@ -1,0 +1,2 @@
+[console_scripts]
+postfach-mcp = postfach_mcp.cli:main

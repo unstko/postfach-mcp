@@ -1,0 +1,13 @@
+LICENSE
+README.md
+pyproject.toml
+src/postfach_mcp/__init__.py
+src/postfach_mcp/config.py
+src/postfach_mcp/py.typed
+src/postfach_mcp.egg-info/PKG-INFO
+src/postfach_mcp.egg-info/SOURCES.txt
+src/postfach_mcp.egg-info/dependency_links.txt
+src/postfach_mcp.egg-info/entry_points.txt
+src/postfach_mcp.egg-info/requires.txt
+src/postfach_mcp.egg-info/top_level.txt
+tests/test_config.py
