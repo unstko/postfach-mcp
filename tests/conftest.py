@@ -101,6 +101,10 @@ class _FakeFolderManager:
         self._box.calls.append(("folder.exists", {"folder": name}))
         return name in self._box.mailboxes
 
+    def set(self, name: str):
+        self._box.calls.append(("folder.set", {"folder": name}))
+        self._box._select(name)
+
 
 class FakeMailBox:
     """In-memory stand-in for imap_tools.MailBox, one instance per test."""

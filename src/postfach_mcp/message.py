@@ -117,6 +117,17 @@ def _sender(msg: Any) -> str:
     return values.full if values else msg.from_
 
 
+def threading_headers(msg: Any) -> tuple[str | None, list[str]]:
+    """In-Reply-To and References for a reply to `msg`, per RFC 5322:
+    the parent's Message-ID becomes In-Reply-To and is appended to the
+    parent's References chain."""
+    message_id = _header(msg, "message-id")
+    if not message_id:
+        return None, []
+    parent_refs = _header(msg, "references")
+    return message_id, (parent_refs.split() if parent_refs else []) + [message_id]
+
+
 def summarize(msg: Any) -> dict[str, Any]:
     """The list/search view: enough to decide whether to read a message."""
     return {
