@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult
 
 from postfach_mcp import config, tools
 from tests.conftest import FakeMessage
@@ -30,6 +31,7 @@ def server(settings, fake_mailbox) -> MCPServer:
 
 def call(server: MCPServer, name: str, **args: Any) -> dict[str, Any]:
     result = asyncio.run(server.call_tool(name, args))
+    assert isinstance(result, CallToolResult)
     assert result.is_error is False
     assert result.structured_content is not None
     return result.structured_content
