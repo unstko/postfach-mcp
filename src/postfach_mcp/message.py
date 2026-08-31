@@ -14,6 +14,7 @@ Two security properties live here and must survive any refactoring:
 
 from __future__ import annotations
 
+import html as html_escaping
 import re
 from email.headerregistry import Address
 from email.message import EmailMessage
@@ -177,6 +178,17 @@ def full(msg: Any, folder: str, max_body_chars: int = MAX_BODY_CHARS) -> dict[st
 # -- Writing ----------------------------------------------------------------
 
 
+def body_as_html(body: str) -> str:
+    """The plain-text body as a minimal HTML alternative.
+
+    Escaped first, then every line break made explicit as <br> inside one
+    <div> — verified against Spark, whose HTML-based composer collapses
+    the line breaks of plain-text drafts and flattens <p> and <div>
+    paragraph spacing, but renders <br><br> as a blank line."""
+    text = html_escaping.escape(body).replace("\r\n", "\n").replace("\r", "\n")
+    return "<div>" + text.replace("\n", "<br>") + "</div>"
+
+
 def build_draft(
     *,
     from_address: str,
@@ -187,9 +199,14 @@ def build_draft(
     bcc: list[str] | None = None,
     in_reply_to: str | None = None,
     references: list[str] | None = None,
+    html_alternative: bool = False,
 ) -> EmailMessage:
     """Build an RFC-822 draft. Threading headers are the caller's choice;
-    Message-ID and Date are always set so the draft is complete."""
+    Message-ID and Date are always set so the draft is complete.
+
+    With `html_alternative` the plain text stays the first part and an
+    HTML rendering of the same text is added, for clients whose composer
+    cannot display plain-text drafts faithfully."""
     msg = EmailMessage()
     sender = parse_address(from_address, "from")
     msg["From"] = sender
@@ -208,4 +225,6 @@ def build_draft(
     if references:
         msg["References"] = " ".join(ensure_header_safe(ref, "references") for ref in references)
     msg.set_content(body)
+    if html_alternative:
+        msg.add_alternative(body_as_html(body), subtype="html")
     return msg

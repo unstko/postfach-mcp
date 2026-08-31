@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import functools
 from datetime import date
+from email.policy import SMTP
 from typing import Any
 
 from imap_tools import AND, MailMessageFlags
@@ -264,9 +265,13 @@ def register(mcp: MCPServer, settings: Settings) -> None:
                 body=body,
                 in_reply_to=in_reply_to,
                 references=references or None,
+                html_alternative=account.draft_format == "html",
             )
             mb.append(
-                draft.as_bytes(),
+                # The SMTP policy serializes with CRLF line endings, as the
+                # IMAP APPEND literal requires; the default policy would
+                # send bare LF and rely on server tolerance.
+                draft.as_bytes(policy=SMTP),
                 folder=account.drafts_folder,
                 flag_set=[MailMessageFlags.DRAFT, MailMessageFlags.SEEN],
             )

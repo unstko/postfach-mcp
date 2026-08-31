@@ -92,6 +92,22 @@ def test_from_address_override(clean_env):
     assert config.load().account.from_address == "Stefan <s@example.org>"
 
 
+def test_draft_format_defaults_to_text(clean_env):
+    set_valid(clean_env)
+    assert config.load().account.draft_format == "text"
+
+
+def test_draft_format_html(clean_env):
+    set_valid(clean_env, DRAFT_FORMAT="html")
+    assert config.load().account.draft_format == "html"
+
+
+def test_draft_format_rejects_unknown_value(clean_env):
+    set_valid(clean_env, DRAFT_FORMAT="markdown")
+    with pytest.raises(config.ConfigError, match="POSTFACH_MCP_DRAFT_FORMAT"):
+        config.load()
+
+
 def test_custom_ports_and_folder(clean_env):
     set_valid(clean_env, IMAP_PORT="143", PORT="9999", DRAFTS_FOLDER="Entwürfe")
     settings = config.load()

@@ -132,6 +132,32 @@ class TestBuildDraft:
         assert parsed["Date"]
         assert "äöüß" in parsed.get_content()
 
+    def test_plain_text_by_default(self):
+        draft = message.build_draft(
+            from_address="s@example.org",
+            to=["b@example.org"],
+            subject="Hi",
+            body="Absatz eins.\n\nAbsatz zwei.",
+        )
+        assert draft.get_content_type() == "text/plain"
+
+    def test_html_alternative_keeps_text_and_adds_breaks(self):
+        draft = message.build_draft(
+            from_address="s@example.org",
+            to=["b@example.org"],
+            subject="Hi",
+            body="Absatz eins.\r\n\r\nAbsatz <zwei> & Co.",
+            html_alternative=True,
+        )
+        assert draft.get_content_type() == "multipart/alternative"
+        text_part, html_part = draft.iter_parts()
+        assert text_part.get_content_type() == "text/plain"
+        text = text_part.get_content().replace("\r\n", "\n").rstrip("\n")
+        assert text == "Absatz eins.\n\nAbsatz <zwei> & Co."
+        html = html_part.get_content()
+        # Blank lines must survive as <br><br>, mail content must be escaped.
+        assert "Absatz eins.<br><br>Absatz &lt;zwei&gt; &amp; Co." in html
+
     def test_rejects_header_injection_in_subject(self):
         with pytest.raises(ValueError, match="subject"):
             message.build_draft(

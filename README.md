@@ -58,6 +58,7 @@ are reported together, each by name.
 | `IMAP_PORT` | `993` | IMAP over TLS port |
 | `DRAFTS_FOLDER` | `Drafts` | Folder that receives created drafts; `postfach-mcp check` verifies it exists |
 | `FROM_ADDRESS` | `IMAP_USER` | From header for drafts, e.g. `Your Name <you@example.org>` |
+| `DRAFT_FORMAT` | `text` | `text` writes plain-text drafts; `html` adds an HTML rendering of the same text as a `multipart/alternative` part — for clients whose HTML-based composer collapses plain-text line breaks (Spark, for example) |
 | `TOKEN` | *(required for `serve`)* | Bearer token, at least 32 characters (`openssl rand -hex 32`) |
 | `HOST` | `127.0.0.1` | Bind address of the HTTP server |
 | `PORT` | `8000` | Port of the HTTP server |
@@ -110,8 +111,12 @@ claude mcp add --transport http postfach https://mail.example.org/mcp \
 ## Limitations
 
 - One account per server instance.
-- Drafts are plain text only, and IMAP cannot edit them in place — a
-  changed draft means a new one.
+- Drafts carry no formatting beyond line and paragraph breaks, and IMAP
+  cannot edit them in place — a changed draft means a new one.
+- Some clients render plain-text drafts through an HTML composer and lose
+  all line breaks (observed in Spark on macOS and Android; webmail shows
+  the same draft correctly). `DRAFT_FORMAT=html` works around this by
+  adding an HTML alternative part.
 - Attachments are reported as metadata only (name, type, size); their
   content is not retrievable.
 - Message bodies are capped at 50,000 characters, list/search results at

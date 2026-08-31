@@ -34,6 +34,9 @@ class Account:
     password: str
     drafts_folder: str
     from_address: str
+    # "text" writes plain-text drafts; "html" adds an HTML alternative for
+    # clients whose composer collapses plain-text line breaks (e.g. Spark).
+    draft_format: str
 
 
 @dataclass(frozen=True)
@@ -99,6 +102,10 @@ def load(require_token: bool = True) -> Settings:
     imap_port = _int("IMAP_PORT", "993", problems)
     port = _int("PORT", "8000", problems)
 
+    draft_format = _env("DRAFT_FORMAT", "text") or "text"
+    if draft_format not in ("text", "html"):
+        problems.append(f"{PREFIX}DRAFT_FORMAT must be 'text' or 'html', not {draft_format!r}")
+
     if problems:
         raise ConfigError("; ".join(problems))
 
@@ -115,5 +122,6 @@ def load(require_token: bool = True) -> Settings:
             password=required["IMAP_PASSWORD"],
             drafts_folder=_env("DRAFTS_FOLDER", "Drafts") or "Drafts",
             from_address=_env("FROM_ADDRESS", user) or user,
+            draft_format=draft_format,
         ),
     )

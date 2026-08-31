@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 from email import message_from_bytes, policy
 from typing import Any
 
@@ -157,6 +158,30 @@ class TestCreateDraft:
         assert parsed["Subject"] == "Grüße"
         assert parsed["Message-ID"] == result["message_id"]
         assert "Servus äöü" in parsed.get_content()
+        # The APPEND literal must use CRLF line endings (RFC 3501), not
+        # rely on the server normalizing bare LF.
+        assert b"\r\n" in raw
+        assert raw.count(b"\n") == raw.count(b"\r\n")
+
+    def test_html_draft_format_adds_alternative(self, settings, fake_mailbox):
+        html_settings = dataclasses.replace(
+            settings, account=dataclasses.replace(settings.account, draft_format="html")
+        )
+        mcp = MCPServer("postfach-mcp-test")
+        tools.register(mcp, html_settings)
+        fake_mailbox.add_folder("Drafts")
+        call(
+            mcp,
+            "create_draft",
+            to=["bob@example.org"],
+            subject="Hi",
+            body="Absatz eins.\n\nAbsatz zwei.",
+        )
+        parsed = message_from_bytes(fake_mailbox.appended[0][0], policy=policy.default)
+        assert parsed.get_content_type() == "multipart/alternative"
+        text_part, html_part = parsed.iter_parts()
+        assert text_part.get_content_type() == "text/plain"
+        assert "Absatz eins.<br><br>Absatz zwei." in html_part.get_content()
 
     def test_reply_sets_threading_headers(self, server, fake_mailbox):
         fake_mailbox.add_folder("Drafts")
