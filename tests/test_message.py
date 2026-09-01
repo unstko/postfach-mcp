@@ -196,3 +196,17 @@ class TestBuildDraft:
                 subject="Hi",
                 body="x",
             )
+
+
+class TestPickHeaders:
+    def test_multiple_values_stay_complete(self):
+        msg = FakeMessage(headers={"received": ("from a", "from b")})
+        assert message.pick_headers(msg, ["Received"]) == {"Received": ["from a", "from b"]}
+
+    def test_lookup_is_case_insensitive(self):
+        msg = FakeMessage(headers={"list-id": ("<news.example.org>",)})
+        assert message.pick_headers(msg, ["List-Id"]) == {"List-Id": ["<news.example.org>"]}
+
+    def test_absent_header_is_left_out(self):
+        msg = FakeMessage(headers={"subject": ("x",)})
+        assert message.pick_headers(msg, ["List-Id"]) == {}

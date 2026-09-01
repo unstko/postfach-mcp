@@ -13,7 +13,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from imap_tools.errors import MailboxAppendError, MailboxCopyError, MailboxFolderSelectError
+from imap_tools.errors import (
+    MailboxAppendError,
+    MailboxCopyError,
+    MailboxFolderCreateError,
+    MailboxFolderSelectError,
+)
 
 from postfach_mcp import config, imap
 
@@ -107,6 +112,25 @@ class _FakeFolderManager:
         self._box.calls.append(("folder.set", {"folder": name}))
         self._box._select(name)
 
+    def create(self, name: str):
+        self._box.calls.append(("folder.create", {"folder": name}))
+        if name in self._box.mailboxes:
+            raise MailboxFolderCreateError(("NO", [b"[ALREADYEXISTS] folder exists"]), "OK")
+        self._box.add_folder(name)
+        return ("OK", [b"CREATE completed"])
+
+
+class _FakeImapClient:
+    """The slice of imaplib's client that the code under test touches:
+    response codes accumulate per key and are popped on read."""
+
+    def __init__(self) -> None:
+        self.untagged: dict[str, list[bytes]] = {}
+
+    def response(self, code: str) -> tuple[str, list[bytes | None]]:
+        data = self.untagged.pop(code, None)
+        return (code, list(data) if data else [None])
+
 
 class FakeMailBox:
     """In-memory stand-in for imap_tools.MailBox, one instance per test."""
@@ -121,6 +145,9 @@ class FakeMailBox:
         self.connect_error: Exception | None = None
         self.logged_out = False
         self.folder = _FakeFolderManager(self)
+        self.client = _FakeImapClient()
+        # COPYUID data the next move() should announce; empty = no UIDPLUS.
+        self.copyuid_data: list[bytes] = []
 
     # -- test setup helpers --
 
@@ -148,6 +175,11 @@ class FakeMailBox:
         if folder not in self.mailboxes:
             raise MailboxFolderSelectError(("NO", [b"no such folder"]), "OK")
         self.current_folder = folder
+
+    def uids(self, criteria: Any = "ALL", charset: str = "US-ASCII", sort: Any = None):
+        self.calls.append(("uids", {"criteria": criteria, "charset": charset, "sort": sort}))
+        assert self.current_folder is not None
+        return [m.uid for m in self.mailboxes[self.current_folder]]
 
     def fetch(
         self,
@@ -222,6 +254,8 @@ class FakeMailBox:
         moved = [m for m in source if m.uid in uid_list]
         self.mailboxes[self.current_folder] = [m for m in source if m.uid not in uid_list]
         self.mailboxes[destination_folder].extend(moved)
+        if self.copyuid_data:
+            self.client.untagged.setdefault("COPYUID", []).extend(self.copyuid_data)
         return (("OK", [b"COPY"]), ("OK", [b"EXPUNGE"]))
 
 

@@ -13,9 +13,11 @@ EXPECTED_TOOLS = {
     "list_folders",
     "folder_status",
     "list_messages",
+    "list_headers",
     "search_messages",
     "get_message",
     "create_draft",
+    "create_folder",
     "mark_read",
     "mark_flagged",
     "move_messages",
@@ -80,7 +82,7 @@ def test_initialize_roundtrip(client):
     assert result["serverInfo"]["name"] == "postfach-mcp"
 
 
-def test_tools_list_is_exactly_the_nine(client):
+def test_tools_list_is_exactly_the_eleven(client):
     rpc(client, "initialize", initialize_params())
     response = rpc(client, "tools/list", {}, id_=2)
     assert response.status_code == 200

@@ -30,17 +30,17 @@ def server(settings, fake_mailbox) -> MCPServer:
     return mcp
 
 
-def call(server: MCPServer, name: str, **args: Any) -> dict[str, Any]:
-    result = asyncio.run(server.call_tool(name, args))
+def call(server: MCPServer, tool_name: str, **args: Any) -> dict[str, Any]:
+    result = asyncio.run(server.call_tool(tool_name, args))
     assert isinstance(result, CallToolResult)
     assert result.is_error is False
     assert result.structured_content is not None
     return result.structured_content
 
 
-def call_error(server: MCPServer, name: str, match: str, **args: Any) -> None:
+def call_error(server: MCPServer, tool_name: str, match: str, **args: Any) -> None:
     with pytest.raises(ToolError, match=match):
-        asyncio.run(server.call_tool(name, args))
+        asyncio.run(server.call_tool(tool_name, args))
 
 
 def last_call(box, kind: str) -> dict[str, Any]:
@@ -55,6 +55,28 @@ class TestListFolders:
         by_name = {f["name"]: f for f in result["folders"]}
         assert by_name["Entwürfe"]["selectable"] is True
         assert by_name["[Gmail]"]["selectable"] is False
+
+    def test_without_counts_stays_lean(self, server, fake_mailbox):
+        fake_mailbox.add_folder("Archive")
+        result = call(server, "list_folders")
+        assert "messages" not in result["folders"][0]
+        assert not [c for c in fake_mailbox.calls if c[0] == "folder.status"]
+
+    def test_with_counts_over_one_connection(self, server, fake_mailbox):
+        fake_mailbox.add_message("INBOX", FakeMessage(uid="1", flags=("\\Seen",)))
+        fake_mailbox.add_message("INBOX", FakeMessage(uid="2"))
+        fake_mailbox.add_folder("Archive")
+        fake_mailbox.add_folder("[Gmail]", flags=("\\Noselect",))
+        result = call(server, "list_folders", with_counts=True)
+        by_name = {f["name"]: f for f in result["folders"]}
+        assert by_name["INBOX"]["messages"] == 2
+        assert by_name["INBOX"]["unseen"] == 1
+        assert by_name["Archive"]["messages"] == 0
+        # Noselect folders get no STATUS call and no count keys.
+        assert "messages" not in by_name["[Gmail]"]
+        status_calls = [c for c in fake_mailbox.calls if c[0] == "folder.status"]
+        assert [c[1]["folder"] for c in status_calls] == ["INBOX", "Archive"]
+        assert len([c for c in fake_mailbox.calls if c[0] == "connect"]) == 1
 
 
 class TestFolderStatus:
@@ -119,6 +141,83 @@ class TestSearchMessages:
         fetch = last_call(fake_mailbox, "fetch")
         assert fetch["charset"] == "UTF-8"
         assert "Grüße" in str(fetch["criteria"])
+
+    def test_header_existence_is_a_criterion_on_its_own(self, server, fake_mailbox):
+        call(server, "search_messages", header_name="List-Unsubscribe")
+        fetch = last_call(fake_mailbox, "fetch")
+        assert 'HEADER "List-Unsubscribe" ""' in str(fetch["criteria"])
+        assert fetch["charset"] == "US-ASCII"
+
+    def test_header_with_value(self, server, fake_mailbox):
+        call(server, "search_messages", header_name="X-Spam-Flag", header_value="YES")
+        assert 'HEADER "X-Spam-Flag" "YES"' in str(last_call(fake_mailbox, "fetch")["criteria"])
+
+    def test_non_ascii_header_value_switches_to_utf8(self, server, fake_mailbox):
+        call(server, "search_messages", header_name="X-Note", header_value="Grüße")
+        assert last_call(fake_mailbox, "fetch")["charset"] == "UTF-8"
+
+    def test_header_value_without_name_rejected(self, server, fake_mailbox):
+        call_error(server, "search_messages", "header_name", header_value="YES")
+
+    def test_header_injection_rejected(self, server, fake_mailbox):
+        call_error(
+            server, "search_messages", "invalid characters",
+            header_name="X-Evil\r\nA1 DELETE INBOX",
+        )  # fmt: skip
+        assert not [c for c in fake_mailbox.calls if c[0] == "fetch"]
+
+
+class TestListHeaders:
+    def test_empty_folder_skips_the_fetch(self, server, fake_mailbox):
+        result = call(server, "list_headers")
+        assert result == {"folder": "INBOX", "total": 0, "offset": 0, "count": 0, "messages": []}
+        # An empty uid_list would make imap-tools search the whole folder.
+        assert not [c for c in fake_mailbox.calls if c[0] == "fetch"]
+
+    def test_pages_oldest_first_with_numeric_order(self, server, fake_mailbox):
+        for uid in ["10", "2", "1", "5", "3"]:
+            fake_mailbox.add_message("INBOX", FakeMessage(uid=uid, subject=f"m{uid}"))
+        result = call(server, "list_headers", offset=2, limit=2)
+        assert result["total"] == 5
+        assert result["count"] == 2
+        assert [m["uid"] for m in result["messages"]] == ["3", "5"]
+        fetch = last_call(fake_mailbox, "fetch")
+        assert fetch["mark_seen"] is False
+        assert fetch["headers_only"] is True
+        assert fetch["bulk"] is True
+
+    def test_offset_beyond_total(self, server, fake_mailbox):
+        fake_mailbox.add_message("INBOX", FakeMessage(uid="1"))
+        result = call(server, "list_headers", offset=5)
+        assert result["total"] == 1
+        assert result["count"] == 0
+        assert not [c for c in fake_mailbox.calls if c[0] == "fetch"]
+
+    def test_negative_offset_rejected(self, server, fake_mailbox):
+        call_error(server, "list_headers", "negative", offset=-1)
+
+    def test_limit_is_clamped_to_500(self, server, fake_mailbox):
+        for n in range(510):
+            fake_mailbox.add_message("INBOX", FakeMessage(uid=str(n + 1)))
+        result = call(server, "list_headers", limit=9999)
+        assert result["count"] == 500
+        assert len(last_call(fake_mailbox, "fetch")["uid_list"]) == 500
+
+    def test_extra_headers_are_picked(self, server, fake_mailbox):
+        fake_mailbox.add_message(
+            "INBOX",
+            FakeMessage(uid="1", headers={"list-unsubscribe": ("<mailto:u@example.org>",)}),
+        )
+        fake_mailbox.add_message("INBOX", FakeMessage(uid="2"))
+        result = call(server, "list_headers", extra_headers=["List-Unsubscribe"])
+        first, second = result["messages"]
+        assert first["headers"] == {"List-Unsubscribe": ["<mailto:u@example.org>"]}
+        assert second["headers"] == {}
+
+    def test_no_headers_key_without_extra_headers(self, server, fake_mailbox):
+        fake_mailbox.add_message("INBOX", FakeMessage(uid="1"))
+        result = call(server, "list_headers")
+        assert "headers" not in result["messages"][0]
 
 
 class TestGetMessage:
@@ -292,8 +391,29 @@ class TestMoveMessages:
         fake_mailbox.add_message("INBOX", FakeMessage(uid="4", subject="weg"))
         result = call(server, "move_messages", folder="INBOX", uids=["4"], to_folder="Archive")
         assert result["moved_to"] == "Archive"
+        assert result["uid_map"] is None  # the fake announces no COPYUID by default
         assert fake_mailbox.mailboxes["INBOX"] == []
         assert fake_mailbox.mailboxes["Archive"][0].subject == "weg"
+
+    def test_uid_map_from_copyuid(self, server, fake_mailbox):
+        fake_mailbox.add_folder("Archive")
+        for uid in ["4", "5", "6"]:
+            fake_mailbox.add_message("INBOX", FakeMessage(uid=uid))
+        fake_mailbox.copyuid_data = [b"38505 4:6 100:102"]
+        result = call(
+            server, "move_messages", folder="INBOX", uids=["4", "5", "6"], to_folder="Archive"
+        )
+        assert result["uid_map"] == {"4": "100", "5": "101", "6": "102"}
+
+    def test_uid_map_merges_chunked_copyuid(self, server, fake_mailbox):
+        fake_mailbox.add_folder("Archive")
+        for uid in ["4", "9"]:
+            fake_mailbox.add_message("INBOX", FakeMessage(uid=uid))
+        fake_mailbox.copyuid_data = [b"1 4 100", b"1 9 101"]
+        result = call(
+            server, "move_messages", folder="INBOX", uids=["4", "9"], to_folder="Archive"
+        )
+        assert result["uid_map"] == {"4": "100", "9": "101"}
 
     def test_unknown_target_folder(self, server, fake_mailbox):
         fake_mailbox.add_message("INBOX", FakeMessage(uid="4"))
@@ -303,3 +423,19 @@ class TestMoveMessages:
         )  # fmt: skip
         assert len(fake_mailbox.mailboxes["INBOX"]) == 1
         assert not [c for c in fake_mailbox.calls if c[0] == "move"]
+
+
+class TestCreateFolder:
+    def test_creates_the_folder(self, server, fake_mailbox):
+        result = call(server, "create_folder", name="98_Aussortiert")
+        assert result == {"created": True, "folder": "98_Aussortiert"}
+        assert "98_Aussortiert" in fake_mailbox.mailboxes
+        assert last_call(fake_mailbox, "folder.create") == {"folder": "98_Aussortiert"}
+
+    def test_existing_folder_rejected(self, server, fake_mailbox):
+        call_error(server, "create_folder", "already exists", name="INBOX")
+        assert not [c for c in fake_mailbox.calls if c[0] == "folder.create"]
+
+    def test_blank_name_rejected(self, server, fake_mailbox):
+        call_error(server, "create_folder", "must not be empty", name="   ")
+        assert not [c for c in fake_mailbox.calls if c[0] == "folder.create"]

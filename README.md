@@ -7,14 +7,14 @@ drafts, light triage. *Postfach* is German for mailbox.
 **Deliberately no send, no delete — by design, not by configuration.**
 E-mail is untrusted third-party input; an assistant that reads it can be
 manipulated by it. This server keeps the blast radius small: the worst a
-hijacked session can do is file a draft or move a message — both sit in your
-mailbox, in plain sight, reversible. A send tool may appear in a later
+hijacked session can do is file a draft, create a folder or move a message —
+all of it sits in your mailbox, in plain sight, reversible. A send tool may appear in a later
 version, but only behind an explicit opt-in flag, unregistered by default.
 Feature requests to weaken this stance will be declined.
 
 ## Status
 
-v0.1.0 — in production use by the author against a real IMAP mailbox, with
+v0.2.0 — in production use by the author against a real IMAP mailbox, with
 three client paths verified: Claude Code, claude.ai on the web, and the
 Claude Android app. Still a 0.x: the tool surface and configuration may
 change between releases. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
@@ -23,15 +23,17 @@ change between releases. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 | Tool | Purpose |
 |---|---|
-| `list_folders` | List all folders in the mailbox |
+| `list_folders` | List all folders, optionally with message and unseen counts |
 | `folder_status` | Message and unseen counts for a folder |
 | `list_messages` | Newest messages in a folder |
-| `search_messages` | Server-side IMAP search |
+| `list_headers` | Page through the header data of a whole folder, oldest first |
+| `search_messages` | Server-side IMAP search, including arbitrary header matches |
 | `get_message` | Full message: headers, body, attachment metadata |
 | `create_draft` | Build an RFC-822 message and file it in the drafts folder — never sends |
+| `create_folder` | Create a folder — creating only, no deleting, no renaming |
 | `mark_read` | Set or clear the seen flag |
 | `mark_flagged` | Set or clear the flagged star |
-| `move_messages` | Move messages to another folder |
+| `move_messages` | Move messages to another folder, reporting the new uids when the server supports UIDPLUS |
 
 Messages are addressed by `folder` + `uid`; UIDs are per-folder. Reading
 never sets the seen flag — only `mark_read` does, when asked.
@@ -162,7 +164,10 @@ authentication either way.
 - Attachments are reported as metadata only (name, type, size); their
   content is not retrievable.
 - Message bodies are capped at 50,000 characters, list/search results at
-  100 messages per call; drafts at 500,000 characters.
+  100 messages per call, `list_headers` at 500 headers per page; drafts at
+  500,000 characters.
+- Lossless export of raw messages is out of scope — for backups, use a
+  dedicated tool such as `mbsync` or `offlineimap`.
 - HTML-only messages are converted to text with a deliberately simple
   converter — layout is lost, links are kept visible.
 - `mark_read`, `mark_flagged` and `move_messages` trigger an expunge in

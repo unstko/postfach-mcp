@@ -14,7 +14,7 @@ may appear in it, credentials never do.
 from __future__ import annotations
 
 import imaplib
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 from imap_tools import MailBox
@@ -69,3 +69,58 @@ def open_mailbox(account: Account, folder: str | None = None) -> Iterator[MailBo
         except Exception:
             # Logout is best effort; the interesting error already happened.
             pass
+
+
+def expand_sequence_set(sequence_set: str) -> list[str]:
+    """Expand an IMAP sequence-set like '3:5,8' into individual uids."""
+    uids: list[str] = []
+    for part in sequence_set.split(","):
+        first, colon, last = part.partition(":")
+        if not colon:
+            if not first.isdigit():
+                raise ValueError(f"invalid sequence set: {sequence_set!r}")
+            uids.append(first)
+            continue
+        if not (first.isdigit() and last.isdigit()):
+            raise ValueError(f"invalid sequence set: {sequence_set!r}")
+        # RFC 3501 allows either order of the range ends.
+        lo, hi = sorted((int(first), int(last)))
+        uids.extend(str(n) for n in range(lo, hi + 1))
+    return uids
+
+
+def parse_copyuid(datas: Sequence[bytes | None]) -> dict[str, str] | None:
+    """COPYUID response data ('<uidvalidity> <source-set> <dest-set>') as a
+    source-uid → destination-uid mapping.
+
+    Sets correspond pairwise only within one COPYUID entry (RFC 4315), so
+    each entry is expanded and zipped on its own before merging. Returns
+    None when there was no COPYUID or the data does not parse — the move
+    itself succeeded either way, and no mapping beats a wrong one."""
+    uid_map: dict[str, str] = {}
+    for data in datas:
+        if data is None:
+            continue
+        try:
+            _validity, source_set, dest_set = data.decode("ascii").split()
+            sources = expand_sequence_set(source_set)
+            destinations = expand_sequence_set(dest_set)
+        except ValueError:
+            return None
+        if len(sources) != len(destinations):
+            return None
+        uid_map.update(zip(sources, destinations, strict=True))
+    return uid_map or None
+
+
+def move_with_uid_map(
+    mb: MailBox, uids: Sequence[str], to_folder: str
+) -> dict[str, str] | None:
+    """Move messages and report where they landed, if the server says.
+
+    UIDPLUS servers announce the new uids in a COPYUID response code, which
+    imaplib collects under that key for tagged (COPY) and untagged (MOVE)
+    responses alike — and pops on read, so it is read exactly once here."""
+    mb.move(list(uids), to_folder)
+    datas: Sequence[bytes | None] = mb.client.response("COPYUID")[1]
+    return parse_copyuid(datas)

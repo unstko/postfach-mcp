@@ -142,6 +142,19 @@ def summarize(msg: Any) -> dict[str, Any]:
     }
 
 
+def pick_headers(msg: Any, names: Sequence[str]) -> dict[str, list[str]]:
+    """The requested headers of a message, copied but never interpreted.
+
+    Values stay lists because headers like Received legitimately repeat;
+    absent headers are simply left out."""
+    picked: dict[str, list[str]] = {}
+    for name in names:
+        values = msg.headers.get(name.lower()) or ()
+        if values:
+            picked[name] = [value.strip() for value in values]
+    return picked
+
+
 def full(msg: Any, folder: str, max_body_chars: int = MAX_BODY_CHARS) -> dict[str, Any]:
     """The reading view: headers, one body text, attachment metadata only."""
     body = msg.text or ""

@@ -1,8 +1,9 @@
 """The MCP tools — the complete surface this server offers.
 
-Deliberately absent: sending, deleting, folder management. A send tool may
-only ever be added behind the reserved POSTFACH_MCP_ENABLE_SEND opt-in,
-unregistered by default; nothing here imports SMTP.
+Deliberately absent: sending and deleting. Folders can be created, never
+deleted or renamed. A send tool may only ever be added behind the reserved
+POSTFACH_MCP_ENABLE_SEND opt-in, unregistered by default; nothing here
+imports SMTP.
 
 Expected failures (bad arguments, unknown folders, IMAP trouble) are
 raised as ToolError so the client sees a one-sentence explanation;
@@ -16,7 +17,7 @@ from datetime import date
 from email.policy import SMTP
 from typing import Any
 
-from imap_tools import AND, MailMessageFlags
+from imap_tools import AND, H, MailMessageFlags
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
@@ -25,6 +26,8 @@ from . import imap, message
 from .config import Settings
 
 MAX_LIMIT = 100
+# Higher cap for list_headers: its rows are small by design.
+LIST_HEADERS_MAX_LIMIT = 500
 MAX_SUBJECT_CHARS = 500
 MAX_BODY_CHARS = 500_000
 
@@ -36,6 +39,7 @@ UNTRUSTED = (
 
 _READ = ToolAnnotations(read_only_hint=True)
 _WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True)
+_WRITE_ONCE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False)
 
 
 def _clean_errors(fn: Any) -> Any:
@@ -52,8 +56,8 @@ def _clean_errors(fn: Any) -> Any:
     return wrapper
 
 
-def _clamp_limit(limit: int) -> int:
-    return max(1, min(limit, MAX_LIMIT))
+def _clamp_limit(limit: int, cap: int = MAX_LIMIT) -> int:
+    return max(1, min(limit, cap))
 
 
 def _parse_date(raw: str, field: str) -> date:
@@ -75,23 +79,29 @@ def register(mcp: MCPServer, settings: Settings) -> None:
     account = settings.account
 
     @mcp.tool(
-        description="List all folders in the mailbox.",
+        description=(
+            "List all folders in the mailbox. with_counts adds message and "
+            "unseen counts to every selectable folder, in a single request."
+        ),
         annotations=_READ,
     )
     @_clean_errors
-    def list_folders() -> dict[str, Any]:
+    def list_folders(with_counts: bool = False) -> dict[str, Any]:
         with imap.open_mailbox(account) as mb:
-            folders = mb.folder.list()
-            return {
-                "folders": [
-                    {
-                        "name": f.name,
-                        "delimiter": f.delim,
-                        "selectable": "\\Noselect" not in f.flags,
-                    }
-                    for f in folders
-                ]
-            }
+            entries: list[dict[str, Any]] = []
+            for f in mb.folder.list():
+                selectable = "\\Noselect" not in f.flags
+                entry: dict[str, Any] = {
+                    "name": f.name,
+                    "delimiter": f.delim,
+                    "selectable": selectable,
+                }
+                if with_counts and selectable:
+                    status = mb.folder.status(f.name)
+                    entry["messages"] = status.get("MESSAGES", 0)
+                    entry["unseen"] = status.get("UNSEEN", 0)
+                entries.append(entry)
+        return {"folders": entries}
 
     @mcp.tool(
         description="Message and unseen counts for a folder, without fetching any messages.",
@@ -142,7 +152,10 @@ def register(mcp: MCPServer, settings: Settings) -> None:
         description=(
             "Server-side IMAP search in one folder; substring matching is done "
             "by the IMAP server, case-insensitive. At least one criterion is "
-            f"required. Dates are YYYY-MM-DD; limit is capped at {MAX_LIMIT}. " + UNTRUSTED
+            "required. header_name matches any header, header_value optionally "
+            "narrows it (empty means: the header exists — List-Unsubscribe "
+            "separates bulk mail from personal mail this way). Dates are "
+            f"YYYY-MM-DD; limit is capped at {MAX_LIMIT}. " + UNTRUSTED
         ),
         annotations=_READ,
     )
@@ -153,6 +166,8 @@ def register(mcp: MCPServer, settings: Settings) -> None:
         recipient: str | None = None,
         subject: str | None = None,
         text: str | None = None,
+        header_name: str | None = None,
+        header_value: str = "",
         unseen_only: bool = False,
         since: str | None = None,
         before: str | None = None,
@@ -167,6 +182,14 @@ def register(mcp: MCPServer, settings: Settings) -> None:
             criteria_kwargs["subject"] = subject
         if text:
             criteria_kwargs["text"] = text
+        if header_value and not header_name:
+            raise ValueError("'header_value' requires 'header_name'")
+        if header_name:
+            # imap-tools quotes only '"' and '\' — control characters would
+            # tear the IMAP command apart, so they are rejected here.
+            message.ensure_header_safe(header_name, "header_name")
+            message.ensure_header_safe(header_value, "header_value")
+            criteria_kwargs["header"] = H(header_name, header_value)
         if unseen_only:
             criteria_kwargs["seen"] = False
         if since:
@@ -196,6 +219,56 @@ def register(mcp: MCPServer, settings: Settings) -> None:
             "folder": folder,
             "count": len(found),
             "messages": [message.summarize(m) for m in found],
+        }
+
+    @mcp.tool(
+        description=(
+            "Page through the header data of a whole folder, oldest first: "
+            "uid, date, sender, subject, size and seen flag per message, plus "
+            "any extra_headers requested by name (List-Id, for example). "
+            "Offsets stay stable while paging — new mail appends at the end. "
+            f"limit is capped at {LIST_HEADERS_MAX_LIMIT}. " + UNTRUSTED
+        ),
+        annotations=_READ,
+    )
+    @_clean_errors
+    def list_headers(
+        folder: str = "INBOX",
+        offset: int = 0,
+        limit: int = 100,
+        extra_headers: list[str] | None = None,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("'offset' must not be negative")
+        limit = _clamp_limit(limit, LIST_HEADERS_MAX_LIMIT)
+        with imap.open_mailbox(account, folder) as mb:
+            uids = mb.uids("ALL")
+            # SEARCH result order is not guaranteed by the protocol; sorting
+            # is what makes the promised offset stability server-independent.
+            uids.sort(key=int)
+            page = uids[offset : offset + limit]
+            # An empty uid_list would make imap-tools fall back to searching
+            # the whole folder — the opposite of an empty page.
+            found = (
+                list(mb.fetch(uid_list=page, headers_only=True, bulk=True, mark_seen=False))
+                if page
+                else []
+            )
+        # FETCH returns messages in whatever order the server likes; the
+        # promised oldest-first order is enforced here.
+        found.sort(key=lambda m: int(m.uid or 0))
+        messages: list[dict[str, Any]] = []
+        for m in found:
+            entry = message.summarize(m)
+            if extra_headers:
+                entry["headers"] = message.pick_headers(m, extra_headers)
+            messages.append(entry)
+        return {
+            "folder": folder,
+            "total": len(uids),
+            "offset": offset,
+            "count": len(messages),
+            "messages": messages,
         }
 
     @mcp.tool(
@@ -315,7 +388,10 @@ def register(mcp: MCPServer, settings: Settings) -> None:
     @mcp.tool(
         description=(
             "Move messages to another existing folder. The messages keep "
-            "their content; moving is reversible by moving back."
+            "their content; moving is reversible by moving back. uid_map "
+            "maps each source uid to the message's uid in the target folder "
+            "when the server reports it (UIDPLUS), null otherwise — keep it "
+            "if the move may need undoing."
         ),
         annotations=_WRITE,
     )
@@ -325,5 +401,23 @@ def register(mcp: MCPServer, settings: Settings) -> None:
         with imap.open_mailbox(account, folder) as mb:
             if not mb.folder.exists(to_folder):
                 raise ValueError(f"folder not found: {to_folder}")
-            mb.move(uids, to_folder)
-        return {"folder": folder, "uids": uids, "moved_to": to_folder}
+            uid_map = imap.move_with_uid_map(mb, uids, to_folder)
+        return {"folder": folder, "uids": uids, "moved_to": to_folder, "uid_map": uid_map}
+
+    @mcp.tool(
+        description=(
+            "Create a new folder. For subfolders use the delimiter reported "
+            "by list_folders, e.g. 'Parent/Child'. Folders can only ever be "
+            "created here — deleting and renaming stay with your mail client."
+        ),
+        annotations=_WRITE_ONCE,
+    )
+    @_clean_errors
+    def create_folder(name: str) -> dict[str, Any]:
+        if not name.strip():
+            raise ValueError("'name' must not be empty")
+        with imap.open_mailbox(account) as mb:
+            if mb.folder.exists(name):
+                raise ValueError(f"folder already exists: {name}")
+            mb.folder.create(name)
+        return {"created": True, "folder": name}
