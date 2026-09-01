@@ -89,6 +89,29 @@ def test_tools_list_is_exactly_the_nine(client):
     assert not any(n.startswith(("send", "delete")) for n in names)
 
 
+def test_extra_token_accepted_end_to_end(account):
+    extra = "e" * 32
+    settings = config.Settings(
+        host="127.0.0.1",
+        port=8000,
+        token=TOKEN,
+        allowed_hosts=("testserver",),
+        account=account,
+        extra_tokens=(extra,),
+    )
+    with TestClient(server.build_app(settings)) as client:
+        response = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": initialize_params()},
+            headers={
+                "Authorization": f"Bearer {extra}",
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+            },
+        )
+        assert response.status_code == 200
+
+
 def test_foreign_host_header_rejected(account):
     # DNS-rebinding protection: a Host name outside allowed_hosts must not
     # reach the MCP app. This is the documented 421 trap behind a proxy.

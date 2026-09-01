@@ -61,6 +61,7 @@ are reported together, each by name.
 | `FROM_ADDRESSES` | — | Comma-separated additional sender identities `create_draft` may select via its `from_address` argument; anything not listed here or in `FROM_ADDRESS` is rejected |
 | `DRAFT_FORMAT` | `text` | `text` writes plain-text drafts; `html` adds an HTML rendering of the same text as a `multipart/alternative` part — for clients whose HTML-based composer collapses plain-text line breaks (Spark, for example) |
 | `TOKEN` | *(required for `serve`)* | Bearer token, at least 32 characters (`openssl rand -hex 32`) |
+| `EXTRA_TOKENS` | — | Comma-separated additional bearer tokens, same length rule — give each client its own so one can be revoked without touching the others |
 | `HOST` | `127.0.0.1` | Bind address of the HTTP server |
 | `PORT` | `8000` | Port of the HTTP server |
 | `ALLOWED_HOSTS` | `127.0.0.1,localhost` | Comma-separated Host header allowlist — add the public name your proxy or tunnel uses |

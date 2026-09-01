@@ -52,6 +52,9 @@ class Settings:
     token: str | None
     allowed_hosts: tuple[str, ...]
     account: Account
+    # Additional bearer tokens the server accepts alongside `token`, so
+    # each client can hold its own, individually revocable credential.
+    extra_tokens: tuple[str, ...] = ()
 
 
 def _env(name: str, default: str | None = None) -> str | None:
@@ -105,6 +108,17 @@ def load(require_token: bool = True) -> Settings:
                 "(generate one with: openssl rand -hex 32)"
             )
 
+    extra_tokens = tuple(
+        part.strip() for part in (_env("EXTRA_TOKENS") or "").split(",") if part.strip()
+    )
+    for entry in extra_tokens:
+        if len(entry) < MIN_TOKEN_LENGTH:
+            # Never echo the value: even a too-short token is a secret.
+            problems.append(
+                f"{PREFIX}EXTRA_TOKENS contains a token shorter than "
+                f"{MIN_TOKEN_LENGTH} characters (generate one with: openssl rand -hex 32)"
+            )
+
     imap_port = _int("IMAP_PORT", "993", problems)
     port = _int("PORT", "8000", problems)
 
@@ -130,6 +144,7 @@ def load(require_token: bool = True) -> Settings:
         port=port,
         token=token,
         allowed_hosts=_hosts(_env("ALLOWED_HOSTS", "127.0.0.1,localhost")),
+        extra_tokens=extra_tokens,
         account=Account(
             imap_host=required["IMAP_HOST"],
             imap_port=imap_port,

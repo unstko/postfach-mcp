@@ -76,6 +76,30 @@ def test_token_not_required_when_disabled(clean_env):
     assert settings.token is None
 
 
+def test_extra_tokens_default_empty(clean_env):
+    set_valid(clean_env)
+    assert config.load().extra_tokens == ()
+
+
+def test_extra_tokens_parsing(clean_env):
+    set_valid(clean_env, EXTRA_TOKENS=f" {'a' * 32} , ,{'b' * 32} ")
+    settings = config.load()
+    assert settings.extra_tokens == ("a" * 32, "b" * 32)
+
+
+def test_extra_tokens_rejects_short_entry(clean_env):
+    set_valid(clean_env, EXTRA_TOKENS=f"{'a' * 32},short")
+    with pytest.raises(config.ConfigError, match="POSTFACH_MCP_EXTRA_TOKENS"):
+        config.load()
+
+
+def test_short_extra_token_value_not_echoed(clean_env):
+    set_valid(clean_env, EXTRA_TOKENS="oops-a-secret")
+    with pytest.raises(config.ConfigError) as excinfo:
+        config.load()
+    assert "oops-a-secret" not in str(excinfo.value)
+
+
 def test_allowed_hosts_parsing(clean_env):
     set_valid(clean_env, ALLOWED_HOSTS=" Mail.example.org , ,localhost ")
     settings = config.load()

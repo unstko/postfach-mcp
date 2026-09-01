@@ -3,6 +3,7 @@ from starlette.testclient import TestClient
 from postfach_mcp.auth import BearerAuthMiddleware
 
 TOKEN = "t" * 32
+EXTRA = "e" * 32
 
 
 async def inner_app(scope, receive, send):
@@ -51,3 +52,23 @@ def test_health_path_exempt():
     response = client().get("/api/health")
     assert response.status_code == 200
     assert response.text == "inner"
+
+
+def multi_client() -> TestClient:
+    return TestClient(BearerAuthMiddleware(inner_app, (TOKEN, EXTRA)))
+
+
+def test_every_configured_token_accepted():
+    for token in (TOKEN, EXTRA):
+        response = multi_client().get("/x", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 200
+
+
+def test_unknown_token_rejected_with_multiple_configured():
+    response = multi_client().get("/x", headers={"Authorization": "Bearer " + "x" * 32})
+    assert response.status_code == 401
+
+
+def test_bare_string_treated_as_one_token_not_characters():
+    response = client().get("/x", headers={"Authorization": "Bearer t"})
+    assert response.status_code == 401

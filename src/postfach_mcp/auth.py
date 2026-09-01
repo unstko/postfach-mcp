@@ -8,23 +8,34 @@ behind it stays untouched.
 from __future__ import annotations
 
 import hmac
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, Sequence
 from typing import Any
 
 _UNAUTHORIZED_BODY = b'{"error": "unauthorized"}'
 
 
 class BearerAuthMiddleware:
-    """Reject every HTTP request without the expected bearer token.
+    """Reject every HTTP request without one of the expected bearer tokens.
+
+    Several tokens may be configured so each client gets its own,
+    individually revocable credential.
 
     Paths in `exempt` (the health probe) pass through, as does anything
     that is not an HTTP request — the lifespan protocol must reach the
     inner app or its session manager never starts.
     """
 
-    def __init__(self, app: Any, token: str, exempt: tuple[str, ...] = ("/api/health",)) -> None:
+    def __init__(
+        self,
+        app: Any,
+        tokens: str | Sequence[str],
+        exempt: tuple[str, ...] = ("/api/health",),
+    ) -> None:
+        # A bare string is one token, not a sequence of one-character ones.
+        if isinstance(tokens, str):
+            tokens = (tokens,)
         self._app = app
-        self._token = token.encode()
+        self._tokens = tuple(token.encode() for token in tokens)
         self._exempt = exempt
 
     async def __call__(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
@@ -55,4 +66,11 @@ class BearerAuthMiddleware:
         scheme, _, credentials = header.partition(b" ")
         if scheme.lower() != b"bearer":
             return False
-        return hmac.compare_digest(credentials.strip(), self._token)
+        presented = credentials.strip()
+        # No early return: the comparison cost must not reveal which of the
+        # configured tokens matched.
+        matched = False
+        for token in self._tokens:
+            if hmac.compare_digest(presented, token):
+                matched = True
+        return matched

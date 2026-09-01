@@ -70,4 +70,4 @@ def build_app(settings: Settings) -> Any:
             allowed_origins=[],
         ),
     )
-    return _HealthEndpoint(BearerAuthMiddleware(inner, settings.token))
+    return _HealthEndpoint(BearerAuthMiddleware(inner, (settings.token, *settings.extra_tokens)))
