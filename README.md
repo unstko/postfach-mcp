@@ -14,8 +14,10 @@ Feature requests to weaken this stance will be declined.
 
 ## Status
 
-Working toward v0.1. The code is complete and fully tested without network;
-verification against a real IMAP server is still pending.
+v0.1.0 — in production use by the author against a real IMAP mailbox, with
+three client paths verified: Claude Code, claude.ai on the web, and the
+Claude Android app. Still a 0.x: the tool surface and configuration may
+change between releases. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 ## Tools
 
