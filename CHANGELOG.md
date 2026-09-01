@@ -7,6 +7,11 @@ the tool surface and configuration may still change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- README: a "Connecting clients" section covering Claude Code and
+  claude.ai custom connectors, including the request-header pitfalls.
+
 ## [0.1.0] - 2026-09-01
 
 First release.

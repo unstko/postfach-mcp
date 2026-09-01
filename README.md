@@ -81,15 +81,53 @@ what is the drafts folder actually called on this server?" without starting
 anything. `serve` exposes the MCP endpoint at `/mcp` and an unauthenticated
 health probe at `/api/health`.
 
-### Connecting a client
+## Connecting clients
 
-Register the server with Claude Code (any Streamable-HTTP MCP client works
-the same way):
+Any Streamable-HTTP MCP client that can send an `Authorization` header
+works. The two most common ones:
+
+### Claude Code
 
 ```bash
 claude mcp add --transport http postfach https://mail.example.org/mcp \
   -H "Authorization: Bearer <token>" --scope user
 ```
+
+### claude.ai custom connector (web and mobile apps)
+
+claude.ai can talk to this server as a custom connector, which also makes
+it available in the Claude mobile apps — the connector is configured once
+and appears there automatically.
+
+Custom connectors normally require OAuth, which this server does not
+offer. What it relies on instead is the **request-header option** in the
+add-connector dialog (authentication "None" plus a static header). At the
+time of writing Anthropic describes that option as available to a limited
+set of organizations, so it may not appear for your account — check the
+dialog before planning around it.
+
+Configuration, and the three pitfalls that cost the author an afternoon:
+
+- URL: your public `https://…/mcp` endpoint. Authentication: **None**.
+  Add a request header `Authorization` with the value
+  `Bearer <token>` — **including the scheme and the space**; the value is
+  sent verbatim, so a bare token produces nothing but 401s.
+- A connector's authentication settings cannot be changed later. To
+  rotate a token, delete the connector and create it again. This pairs
+  well with `EXTRA_TOKENS`: give the connector its own token and it can
+  be revoked without touching your other clients.
+- The connection test in the dialog can fail even when everything is
+  configured correctly (some of its probes are sent without the header).
+  If the server logs show 401s from the dialog but your header is right,
+  deleting and re-creating the connector is faster than debugging.
+
+One consequence for your network setup: connector traffic originates from
+Anthropic's backend, not from your browser — the server must be reachable
+from the public internet, a VPN or tailnet is not enough for this path.
+To keep the exposed surface small you can restrict it to
+[Anthropic's published egress IP range](https://platform.claude.com/docs/en/api/ip-addresses)
+at your proxy or firewall; the bearer token remains the actual
+authentication either way.
 
 ## Security model
 
