@@ -410,9 +410,7 @@ class TestMoveMessages:
         for uid in ["4", "9"]:
             fake_mailbox.add_message("INBOX", FakeMessage(uid=uid))
         fake_mailbox.copyuid_data = [b"1 4 100", b"1 9 101"]
-        result = call(
-            server, "move_messages", folder="INBOX", uids=["4", "9"], to_folder="Archive"
-        )
+        result = call(server, "move_messages", folder="INBOX", uids=["4", "9"], to_folder="Archive")
         assert result["uid_map"] == {"4": "100", "9": "101"}
 
     def test_unknown_target_folder(self, server, fake_mailbox):

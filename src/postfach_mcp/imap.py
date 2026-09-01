@@ -113,9 +113,7 @@ def parse_copyuid(datas: Sequence[bytes | None]) -> dict[str, str] | None:
     return uid_map or None
 
 
-def move_with_uid_map(
-    mb: MailBox, uids: Sequence[str], to_folder: str
-) -> dict[str, str] | None:
+def move_with_uid_map(mb: MailBox, uids: Sequence[str], to_folder: str) -> dict[str, str] | None:
     """Move messages and report where they landed, if the server says.
 
     UIDPLUS servers announce the new uids in a COPYUID response code, which
