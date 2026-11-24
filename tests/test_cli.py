@@ -46,7 +46,14 @@ def uvicorn_calls(monkeypatch):
 def test_serve_uses_environment(valid_env, uvicorn_calls):
     valid_env.setenv(config.PREFIX + "PORT", "9001")
     assert cli.main(["serve"]) == 0
-    assert uvicorn_calls == [{"host": "127.0.0.1", "port": 9001, "log_level": "info"}]
+    assert uvicorn_calls == [
+        {
+            "host": "127.0.0.1",
+            "port": 9001,
+            "log_level": "info",
+            "timeout_graceful_shutdown": cli.GRACEFUL_SHUTDOWN_SECONDS,
+        }
+    ]
 
 
 def test_serve_flags_override_environment(valid_env, uvicorn_calls):
