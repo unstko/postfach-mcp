@@ -16,6 +16,9 @@ import uvicorn
 
 from . import __version__, config, imap, server
 
+# How long a stop waits for open connections before closing them. See _serve.
+GRACEFUL_SHUTDOWN_SECONDS = 5
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -36,13 +39,19 @@ def _parser() -> argparse.ArgumentParser:
 def _serve(args: argparse.Namespace) -> int:
     settings = config.load()
     app = server.build_app(settings)
-    # uvicorn installs its own SIGINT/SIGTERM handlers and shuts down
-    # gracefully, so a systemd stop needs no extra handling here.
+    # uvicorn handles SIGINT/SIGTERM itself, but its graceful shutdown waits
+    # for open connections without a limit. MCP clients keep a streamable
+    # HTTP connection open for as long as they are attached, so a stop would
+    # hang until the service manager gives up and sends SIGKILL, which it
+    # then reports as a failure. Capping the wait lets the process exit
+    # cleanly on its own; keep it below the service manager's stop timeout
+    # (e.g. systemd's TimeoutStopSec). Clients reconnect afterwards.
     uvicorn.run(
         app,
         host=args.host or settings.host,
         port=args.port if args.port is not None else settings.port,
         log_level="info",
+        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
     )
     return 0
 
